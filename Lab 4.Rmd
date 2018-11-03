@@ -1,0 +1,171 @@
+---
+title: "Lab 4"
+output: 
+html_document:
+  toc: TRUE
+  toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(C50)
+library(gmodels)
+
+```
+
+##Exploring and Preparing the Data
+
+```{r}
+credit <- read.csv("credit.csv")
+
+#Most of the data are nominal, so it is not necessary to use the function stringsAsFactors.
+
+```
+
+```{r}
+str(credit)
+
+#Examing the structure of our data. Notice how most of the data are factors and integers.
+
+```
+
+```{r}
+table(credit$checking_balance)
+table(credit$savings_balance)
+table(credit$credit_history)
+
+#Examining certain variables of the data that might be a predictor for a default loan. Notice how in the savings balance variable there are many unknown amounts.
+
+```
+
+```{r}
+summary(credit$months_loan_duration)
+summary(credit$amount)
+table(credit$default)
+
+#The average loan had a duration of 20.9 months with an average amount of 3,271 DM. 
+#700 loans did not default while 300 did default. It is bad for banks to have a high rate of default because it means the bank can not fully recover for the lost loan amount.
+
+```
+
+##Data Prep
+
+```{r}
+set.seed(123)
+train_sample <- sample(1000, 900)
+str(train_sample)
+
+#The train_sample object is a vector of 900 random integers.
+
+```
+
+```{r}
+credit_train <- credit[train_sample, ]
+credit_test <- credit[-train_sample, ]
+
+#Using the previous made train_sample object to split our data into 90% training set and 10% testing set. 
+
+prop.table(table(credit_train$default))
+prop.table(table(credit_test$default))
+
+#Creating proportion tables to see if our split is fair. About 30% of the loans should default in both sets.
+
+```
+
+##Training a Model on the Data
+
+```{r}
+credit_model <- C5.0(credit_train[-17], credit_train$default)
+
+#Building our first model, excluding the 17th column because it is the "default" variable, which is our target variable.
+
+credit_model
+
+```
+
+```{r}
+summary(credit_model)
+
+#Viewing a summary of the credit model we created. I find the last portion of the model interesting, the portion in which the attribute usage is described. Can this be interpreted as the percentage of our variables that are considered most heavily when deciding if someone is going to default on their loan or not? 
+
+```
+
+```{r}
+summary(credit_model)
+
+#The summary shows that all but 133 of the instances were classified correctly, which results in an error rate of 14.8%. A total of 35 actual no values were incorrectly classified as yes (false positives), while 98 yes values were misclassified as no (false negatives).
+
+```
+
+##Evaluating Model Performance
+
+```{r}
+credit_pred <- predict(credit_model, credit_test)
+
+CrossTable(credit_test$default, credit_pred, prop.chisq = FALSE, prop.r = FALSE, dnn = c('actual default', 'predicted default'))
+
+#Out of 100 loan applications, our model predicted that 59 did not default and 14 did default, restulting in model accuracy of 73% and an error rate of 27%. Our model only predicted 14 of the 33 actual loan defaults in our data, which is not very good. 
+
+```
+
+##Improving Model Performance
+
+```{r}
+credit_boost10 <- C5.0(credit_train[-17], credit_train$default, trials = 10)
+
+#The trials parameter sets an upper limit, meaning that the algorithm will stop adding trees if it notices additional trials does not improve the accuracy.
+
+credit_boost10
+summary(credit_boost10)
+
+#Our model made 34 mistakes on 900 training examples, resulting in an error rate of 3.8%. This is a large improvement over the 13.9% error rate in our previous model.
+
+```
+
+```{r}
+credit_boost10pred <- predict(credit_boost10, credit_test)
+CrossTable(credit_test$default, credit_boost10pred,
+             prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+             dnn = c('actual default', 'predicted default'))
+
+#From the crosstable, we can see that our error rate has dipped to 18% from the 27% error rate in our previous model. There are 5 false positives and 13 false negatives. The model is still not predicting defaults well, with only 20 of the 33 predicted correctly, which is a 60% rate.
+
+```
+
+```{r}
+matrix_dimensions <- list(c("no", "yes"), c("no", "yes"))
+names(matrix_dimensions) <- c("predicted", "actual")
+matrix_dimensions
+
+#Describing a 2x2 matrix, using a list of two vectors each with two values.
+
+```
+
+```{r}
+error_cost <- matrix(c(0, 1, 4, 0), nrow = 2, 
+                     dimnames = matrix_dimensions)
+
+#Since we believe a loan default costs the bank four times as much as a missed opportunity, we set up our matrix this way.
+
+error_cost
+
+```
+
+```{r}
+
+credit_cost <- C5.0(credit_train[-17], credit_train$default,
+                    costs = error_cost)
+
+credit_cost_pred <- predict(credit_cost, credit_test)
+
+CrossTable(credit_test$default, credit_cost_pred,
+             prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+             dnn = c('actual default', 'predicted default'))
+
+#Compared to the boosted model we previously did, this model makes more mistakes. The error rate with this model is 37% compared to 18% in the boosted model. In this model, 79% of the actual defaults were predicted to be non-defaults.
+
+```
+
